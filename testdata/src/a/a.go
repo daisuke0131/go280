@@ -4,7 +4,6 @@ import (
 	"reflect"
 )
 
-
 func main() { // want main:"isPanic"
 	f() // want "panic"
 	g()
@@ -16,8 +15,8 @@ func f() { // want f:"isPanic"
 }
 
 func g() {
-	defer func(){
-		if p := recover(); p != nil{
+	defer func() {
+		if p := recover(); p != nil {
 			println("recover")
 		}
 	}()

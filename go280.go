@@ -1,7 +1,6 @@
 package go280
 
 import (
-	"fmt"
 	"golang.org/x/tools/go/ssa"
 
 	"golang.org/x/tools/go/analysis"
@@ -18,14 +17,14 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{
 		buildssa.Analyzer,
 	},
-	FactTypes:  []analysis.Fact{new(isPanic)},
+	FactTypes: []analysis.Fact{new(isPanic)},
 }
 
-type isPanic struct{
+type isPanic struct {
 	analysis.Fact
 }
 
-func (*isPanic) String() string{
+func (*isPanic) String() string {
 	return "isPanic"
 }
 
@@ -35,20 +34,20 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func reportPanic(pass *analysis.Pass){
+func reportPanic(pass *analysis.Pass) {
 	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	positives := map[*ssa.Function][]*ssa.Function{}
 	for _, f := range s.SrcFuncs {
-		if isPanicFunc(pass,f){
+		if isPanicFunc(pass, f) && !isRecover(pass, f) {
 			if f.Object() != nil {
 				pass.ExportObjectFact(f.Object(), new(isPanic))
 			}
 		} else {
-			recordCallee(pass,f,positives)
+			recordCallee(pass, f, positives)
 		}
 	}
-	for k, v := range positives{
-		if pass.ImportObjectFact(k.Object(),new(isPanic)){
+	for k, v := range positives {
+		if pass.ImportObjectFact(k.Object(), new(isPanic)) {
 			for _, v2 := range v {
 				exportFact(pass, v2, positives)
 			}
@@ -56,10 +55,10 @@ func reportPanic(pass *analysis.Pass){
 	}
 }
 
-func reportNotRecover(pass *analysis.Pass){
+func reportNotRecover(pass *analysis.Pass) {
 	s := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, f := range s.SrcFuncs {
-		if isRecover(pass,f){
+		if isRecover(pass, f) {
 			continue
 		}
 		for _, b := range f.Blocks {
@@ -69,49 +68,51 @@ func reportNotRecover(pass *analysis.Pass){
 					continue
 				}
 				callee, _ := call.Common().Value.(*ssa.Function)
-				if callee == nil{
+				if callee == nil {
 					continue
 				}
-				if callee.Object() == nil{
+				if callee.Object() == nil {
 					continue
 				}
-				if pass.ImportObjectFact(callee.Object(),new(isPanic)){
-					pass.Reportf(call.Pos(),"panic")
+				if isRecover(pass, callee) {
+					continue
+				}
+				if pass.ImportObjectFact(callee.Object(), new(isPanic)) {
+					pass.Reportf(call.Pos(), "panic")
 				}
 			}
 		}
 	}
 }
 
-func isRecover(pass *analysis.Pass,f *ssa.Function) bool{
+func isRecover(pass *analysis.Pass, f *ssa.Function) bool {
 	for _, b := range f.Blocks {
 		for _, instr := range b.Instrs {
 			call, _ := instr.(*ssa.Defer)
-			if call == nil{
+			if call == nil {
 				continue
 			}
 			callee, _ := call.Common().Value.(*ssa.Function)
-			if callee == nil{
+			if callee == nil {
 				continue
 			}
-			if callee.Object() == nil{
-				continue
-			}
-			for _, v := range callee.Blocks{
+			//if callee.Object() == nil{
+			//	continue
+			//}
+			for _, v := range callee.Blocks {
 				for _, instr2 := range v.Instrs {
 					call2, _ := instr2.(*ssa.Call)
-					if call2 == nil{
+					if call2 == nil {
 						continue
 					}
-					fmt.Printf("%T\n",call2.Common().Value)
 					callee2, _ := call2.Common().Value.(*ssa.Builtin)
-					if callee2 == nil{
+					if callee2 == nil {
 						continue
 					}
-					if callee2.Object() == nil{
+					if callee2.Object() == nil {
 						continue
 					}
-					if callee2.Name() == "recover"{
+					if callee2.Name() == "recover" {
 						return true
 					}
 				}
@@ -121,7 +122,7 @@ func isRecover(pass *analysis.Pass,f *ssa.Function) bool{
 	return false
 }
 
-func isPanicFunc(pass *analysis.Pass,f *ssa.Function) bool{
+func isPanicFunc(pass *analysis.Pass, f *ssa.Function) bool {
 	for _, b := range f.Blocks {
 		for _, instr := range b.Instrs {
 			p, _ := instr.(*ssa.Panic)
@@ -129,17 +130,17 @@ func isPanicFunc(pass *analysis.Pass,f *ssa.Function) bool{
 				return true
 			}
 			call, _ := instr.(*ssa.Call)
-			if call == nil{
+			if call == nil {
 				continue
 			}
 			callee, _ := call.Common().Value.(*ssa.Function)
-			if callee == nil{
+			if callee == nil {
 				continue
 			}
-			if callee.Object() == nil{
+			if callee.Object() == nil {
 				continue
 			}
-			if pass.ImportObjectFact(callee.Object(),new(isPanic)){
+			if pass.ImportObjectFact(callee.Object(), new(isPanic)) {
 				return true
 			}
 		}
@@ -147,24 +148,24 @@ func isPanicFunc(pass *analysis.Pass,f *ssa.Function) bool{
 	return false
 }
 
-func recordCallee(pass *analysis.Pass,f *ssa.Function, m map[*ssa.Function][]*ssa.Function){
-	if f.Object() == nil{
+func recordCallee(pass *analysis.Pass, f *ssa.Function, m map[*ssa.Function][]*ssa.Function) {
+	if f.Object() == nil {
 		return
 	}
-	if pass.ImportObjectFact(f.Object(),new(isPanic)){
+	if pass.ImportObjectFact(f.Object(), new(isPanic)) {
 		return
 	}
 	for _, b := range f.Blocks {
 		for _, instr := range b.Instrs {
 			call, _ := instr.(*ssa.Call)
-			if call == nil{
+			if call == nil {
 				continue
 			}
 			callee, _ := call.Common().Value.(*ssa.Function)
-			if callee == nil{
+			if callee == nil {
 				continue
 			}
-			if callee.Object() == nil{
+			if callee.Object() == nil {
 				continue
 			}
 			m[callee] = append(m[callee], f)
@@ -172,14 +173,13 @@ func recordCallee(pass *analysis.Pass,f *ssa.Function, m map[*ssa.Function][]*ss
 	}
 }
 
-func exportFact(pass *analysis.Pass,f *ssa.Function,m map[*ssa.Function][]*ssa.Function){
-	if pass.ImportObjectFact(f.Object(),new(isPanic)){
+func exportFact(pass *analysis.Pass, f *ssa.Function, m map[*ssa.Function][]*ssa.Function) {
+	if pass.ImportObjectFact(f.Object(), new(isPanic)) || isRecover(pass, f) {
 		return
 	}
 
-	pass.ExportObjectFact(f.Object(),new(isPanic))
+	pass.ExportObjectFact(f.Object(), new(isPanic))
 	for _, v2 := range m[f] {
-		exportFact(pass,v2,m)
+		exportFact(pass, v2, m)
 	}
 }
-
